@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ferramenta de Overlay da Neuro</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- pdf-lib: For modifying PDFs -->
+    <script src="https://unpkg.com/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
+    <!-- PDF.js: For rendering PDF previews -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <!-- Google Fonts: Montserrat -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Montserrat', sans-serif; }
+        .brand-blue { color: #002d5b; }
+        .brand-pink { color: #e6007e; }
+        .bg-brand-pink { background-color: #e6007e; }
+        .hover\:bg-brand-pink-dark:hover { background-color: #c00068; }
+        .action-btn { cursor: pointer; transition: all 0.2s ease; }
+        .action-btn.selected { background-color: #2563eb; color: white; border-color: #2563eb; }
+        #spinner, #preview-spinner { border-top-color: #ffffff; animation: spin 1s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        input[type="radio"] { appearance: none; -webkit-appearance: none; border-radius: 50%; width: 16px; height: 16px; border: 2px solid #ddd; transition: 0.2s all linear; margin-right: 5px; position: relative; top: 4px; }
+        input[type="radio"]:checked { background-color: #e6007e; border-color: #e6007e; }
+        input[type="radio"]:checked:after { content: ''; display: block; border-radius: 50%; width: 8px; height: 8px; margin: 2px; background-color: white; }
+        #preview-container { min-height: 200px; }
+    </style>
+</head>
+<body class="bg-white">
+
+    <div id="main-tool" class="w-full bg-white p-6 md:p-10 flex flex-col min-h-screen">
+        
+        <header class="text-center mb-8">
+            <img src="https://neurointegrando.com.br/wp-content/uploads/2024/01/neuro-logo-menu.png" alt="Logo Neurointegrando" class="mx-auto h-16 w-auto mb-4">
+            <p class="text-gray-500 mt-2">Utilizem nossa Ferramenta para inserir Marca D'água (Overlay) em seus documentos.</p>
+        </header>
+
+        <main class="flex-grow">
+            <!-- Step 1: PDF Upload -->
+            <div class="mb-6">
+                <label class="block text-lg font-semibold brand-blue mb-3">1. Selecione o PDF</label>
+                <div class="flex items-center justify-center w-full">
+                    <label for="pdfFile" class="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-xl cursor-pointer bg-gray-50 hover:bg-gray-100 transition-colors">
+                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                            <svg class="w-8 h-8 mb-4 text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/></svg>
+                            <p class="mb-2 text-sm text-gray-500"><span class="font-semibold text-gray-600">Clique para enviar</span> ou arraste e solte</p>
+                        </div>
+                        <input id="pdfFile" type="file" class="hidden" accept=".pdf" />
+                    </label>
+                </div>
+                <p id="pdfFileName" class="text-center text-gray-600 mt-2 truncate"></p>
+            </div>
+
+            <!-- Step 2: Watermark Options -->
+            <div class="mb-8">
+                <label class="block text-lg font-semibold brand-blue mb-3">2. Escolha a Marca D'água e Opções</label>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                    <div>
+                        <p class="text-sm font-medium text-gray-600 mb-2">Opções Padrão:</p>
+                        <div class="space-y-2">
+                            <button class="default-logo-btn w-full text-sm text-center bg-white border border-gray-300 rounded-lg p-3 font-medium text-gray-700 hover:bg-gray-100 action-btn" data-logo="completo">Logo Completo (com texto)</button>
+                            <button class="default-logo-btn w-full text-sm text-center bg-white border border-gray-300 rounded-lg p-3 font-medium text-gray-700 hover:bg-gray-100 action-btn" data-logo="simbolo">Apenas Símbolo</button>
+                            <label for="imageFile" id="uploadLabel" class="w-full block text-sm text-center bg-gray-100 border border-gray-300 rounded-lg p-3 font-medium text-gray-700 hover:bg-gray-200 action-btn mt-4">Ou Enviar Outra...</label>
+                            <input id="imageFile" type="file" class="hidden" accept="image/png, image/jpeg" />
+                        </div>
+                        <p id="imageFileName" class="text-center text-gray-600 mt-2 truncate font-semibold"></p>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="opacity" class="block text-sm font-medium text-gray-600">Opacidade (<span id="opacityValue">0.25</span>)</label>
+                            <input type="range" id="opacity" min="0.05" max="1" step="0.05" value="0.25" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer mt-2">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">Posição</label>
+                            <div class="flex items-center space-x-4 mt-2">
+                                <label for="pos-front" class="flex items-center cursor-pointer"><input type="radio" id="pos-front" name="watermarkPosition" value="foreground" checked><span class="ml-2 text-sm text-gray-700">Frente</span></label>
+                                <label for="pos-back" class="flex items-center cursor-pointer"><input type="radio" id="pos-back" name="watermarkPosition" value="background"><span class="ml-2 text-sm text-gray-700">Atrás</span></label>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-600">Otimização</label>
+                            <div class="flex items-center space-x-4 mt-2">
+                                <label for="compress-off" class="flex items-center cursor-pointer"><input type="radio" id="compress-off" name="compression" value="none" checked><span class="ml-2 text-sm text-gray-700">Original</span></label>
+                                <label for="compress-on" class="flex items-center cursor-pointer"><input type="radio" id="compress-on" name="compression" value="compress"><span class="ml-2 text-sm text-gray-700">Reduzido</span></label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Preview Area -->
+            <div id="preview-section" class="mb-8 hidden">
+                 <label class="block text-lg font-semibold brand-blue mb-3">3. Pré-visualização</label>
+                 <div id="preview-container" class="w-full bg-gray-200 rounded-lg flex items-center justify-center border relative">
+                     <div id="preview-placeholder" class="text-gray-500">Selecione um PDF e uma imagem</div>
+                     <canvas id="pdf-canvas" class="max-w-full max-h-full"></canvas>
+                     <div id="preview-spinner-container" class="absolute inset-0 bg-gray-800 bg-opacity-50 flex items-center justify-center hidden">
+                         <div id="preview-spinner" class="w-8 h-8 rounded-full border-4 border-t-transparent animate-spin"></div>
+                     </div>
+                 </div>
+            </div>
+        </main>
+
+        <!-- Action and Footer Section -->
+        <div>
+            <div class="mb-4">
+                <button id="processBtn" class="w-full bg-brand-pink text-white font-bold py-3 px-4 rounded-full flex items-center justify-center transition-all duration-300 ease-in-out hover:bg-brand-pink-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-pink-500 disabled:bg-gray-400 disabled:cursor-not-allowed text-lg">
+                    <span id="buttonText">Gerar e Baixar PDF</span>
+                    <div id="spinner" class="w-5 h-5 rounded-full border-2 border-t-transparent ml-3 hidden"></div>
+                </button>
+            </div>
+            
+            <div id="status-message" class="text-center font-medium hidden h-6"></div>
+
+            <footer class="mt-4 pt-4 border-t border-gray-200 text-center text-xs text-gray-500">
+                <div class="flex items-center justify-center mb-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    <span>Sua segurança é nossa prioridade. Nenhum arquivo é enviado ou armazenado.</span>
+                </div>
+                <p class="italic mt-1">Feito com Carinho pela Equipe Administrativa da Clinica Neurointegrando.</p>
+            </footer>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const { PDFDocument, degrees } = PDFLib;
+            const pdfjsLib = window['pdfjs-dist/build/pdf'];
+            pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
+
+            // --- URLs dos Logos Padrão ---
+            const defaultLogoUrls = {
+                completo: 'https://i.imgur.com/AsDlS5n.png',
+                simbolo: 'https://i.imgur.com/9csjpBQ.png',
+            };
+
+            // --- DOM Elements ---
+            const pdfFileInput = document.getElementById('pdfFile');
+            const imageFileInput = document.getElementById('imageFile');
+            const pdfFileNameDisplay = document.getElementById('pdfFileName');
+            const imageFileNameDisplay = document.getElementById('imageFileName');
+            const opacitySlider = document.getElementById('opacity');
+            const opacityValueDisplay = document.getElementById('opacityValue');
+            const processButton = document.getElementById('processBtn');
+            const buttonText = document.getElementById('buttonText');
+            const spinner = document.getElementById('spinner');
+            const statusMessage = document.getElementById('status-message');
+            const defaultLogoButtons = document.querySelectorAll('.default-logo-btn');
+            const uploadLabel = document.getElementById('uploadLabel');
+            const previewSection = document.getElementById('preview-section');
+            const previewPlaceholder = document.getElementById('preview-placeholder');
+            const canvas = document.getElementById('pdf-canvas');
+            const ctx = canvas.getContext('2d');
+            const previewSpinner = document.getElementById('preview-spinner-container');
+            const positionRadios = document.querySelectorAll('input[name="watermarkPosition"]');
+
+            let selectedPdfFile = null;
+            let selectedImageBytes = null;
+            let selectedImageMimeType = '';
+            let isPreviewRendering = false;
+            let debounceTimer;
+
+            // --- Event Listeners ---
+            pdfFileInput.addEventListener('change', async (event) => {
+                selectedPdfFile = event.target.files[0];
+                pdfFileNameDisplay.textContent = selectedPdfFile ? selectedPdfFile.name : '';
+                if (selectedPdfFile) {
+                    showStatus('');
+                    previewSection.classList.remove('hidden');
+                    await updatePreview();
+                }
+            });
+
+            imageFileInput.addEventListener('change', async (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    selectedImageBytes = await file.arrayBuffer();
+                    selectedImageMimeType = file.type;
+                    imageFileNameDisplay.textContent = `Arquivo: ${file.name}`;
+                    clearSelectedButtonStyle();
+                    uploadLabel.classList.add('selected');
+                    showStatus('');
+                    await updatePreview();
+                }
+            });
+            
+            defaultLogoButtons.forEach(button => {
+                button.addEventListener('click', async (e) => {
+                    const logoKey = e.target.dataset.logo;
+                    if (!logoKey) return;
+                    
+                    const logoUrl = defaultLogoUrls[logoKey];
+                    
+                    try {
+                        setLoading(true, "Carregando logo...");
+                        const response = await fetch(logoUrl);
+                        if (!response.ok) throw new Error('Não foi possível carregar o logo.');
+                        
+                        selectedImageBytes = await response.arrayBuffer();
+                        selectedImageMimeType = response.headers.get("content-type");
+
+                        imageFileNameDisplay.textContent = `Padrão: ${e.target.textContent.trim()}`;
+                        clearSelectedButtonStyle();
+                        e.target.classList.add('selected');
+                        showStatus('');
+                        await updatePreview();
+                    } catch (error) {
+                        showStatus(error.message, true);
+                    } finally {
+                        setLoading(false, "Gerar e Baixar PDF");
+                    }
+                });
+            });
+
+            const debouncedUpdatePreview = () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(updatePreview, 300); // Debounce to avoid rapid updates
+            };
+
+            opacitySlider.addEventListener('input', () => {
+                opacityValueDisplay.textContent = parseFloat(opacitySlider.value).toFixed(2);
+                debouncedUpdatePreview();
+            });
+            positionRadios.forEach(radio => radio.addEventListener('change', updatePreview));
+
+            processButton.addEventListener('click', () => handlePdfProcessing(false)); // false = not preview
+
+            // --- Core Functions ---
+
+            async function applyWatermark(pdfBytes, forPreview = true) {
+                const pdfDoc = await PDFDocument.load(pdfBytes);
+                let watermarkImage;
+                if (selectedImageMimeType.includes('png')) {
+                    watermarkImage = await pdfDoc.embedPng(selectedImageBytes);
+                } else if (selectedImageMimeType.includes('jpeg')) {
+                    watermarkImage = await pdfDoc.embedJpg(selectedImageBytes);
+                } else {
+                    try {
+                        watermarkImage = await pdfDoc.embedPng(selectedImageBytes);
+                    } catch (e) { throw new Error('Formato de imagem não suportado.'); }
+                }
+
+                const pages = pdfDoc.getPages();
+                const pagesToProcess = forPreview ? [pages[0]] : pages;
+                const opacity = parseFloat(opacitySlider.value);
+                const angle = 30;
+                const position = document.querySelector('input[name="watermarkPosition"]:checked').value;
+                const drawInBackground = position === 'background';
+
+                for (const page of pagesToProcess) {
+                    const { width, height } = page.getSize();
+                    const watermarkWidth = width / 4.5;
+                    const scaled = watermarkImage.scale(watermarkWidth / watermarkImage.width);
+                    const xStep = scaled.width * 1.4;
+                    const yStep = scaled.height * 1.8;
+
+                    for (let y = -height / 2; y < height * 1.5; y += yStep) {
+                        for (let x = -width / 2; x < width * 1.5; x += xStep) {
+                            page.drawImage(watermarkImage, {
+                                x, y,
+                                width: scaled.width,
+                                height: scaled.height,
+                                opacity,
+                                rotate: degrees(angle),
+                                inBackground: drawInBackground
+                            });
+                        }
+                    }
+                }
+                
+                const compressionOption = document.querySelector('input[name="compression"]:checked').value;
+                const useCompression = compressionOption === 'compress';
+
+                // If it's a preview, we create a new PDF with just the first page.
+                if (forPreview) {
+                    const previewPdfDoc = await PDFDocument.create();
+                    const [copiedPage] = await previewPdfDoc.copyPages(pdfDoc, [0]);
+                    previewPdfDoc.addPage(copiedPage);
+                    return await previewPdfDoc.save({ useObjectStreams: useCompression });
+                }
+
+                return await pdfDoc.save({ useObjectStreams: useCompression });
+            }
+
+            async function updatePreview() {
+                if (!selectedPdfFile || !selectedImageBytes || isPreviewRendering) return;
+                
+                isPreviewRendering = true;
+                previewSpinner.classList.remove('hidden');
+                previewPlaceholder.classList.add('hidden');
+                canvas.classList.add('hidden');
+
+                try {
+                    const pdfBytes = await selectedPdfFile.arrayBuffer();
+                    const watermarkedPdfBytes = await applyWatermark(pdfBytes, true);
+                    
+                    const pdfData = pdfjsLib.getDocument({ data: watermarkedPdfBytes });
+                    const pdf = await pdfData.promise;
+                    const page = await pdf.getPage(1);
+                    
+                    const viewport = page.getViewport({ scale: 1.5 });
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    const renderContext = { canvasContext: ctx, viewport: viewport };
+                    await page.render(renderContext).promise;
+                    canvas.classList.remove('hidden');
+
+                } catch (error) {
+                    console.error('Preview Error:', error);
+                    showStatus('Erro ao gerar a pré-visualização.', true);
+                    previewPlaceholder.classList.remove('hidden');
+                } finally {
+                    previewSpinner.classList.add('hidden');
+                    isPreviewRendering = false;
+                }
+            }
+            
+            async function handlePdfProcessing() {
+                 if (!selectedPdfFile) {
+                    showStatus("Por favor, selecione um arquivo PDF.", true);
+                    return;
+                }
+                if (!selectedImageBytes) {
+                    showStatus("Por favor, selecione uma imagem para a marca d'água.", true);
+                    return;
+                }
+                setLoading(true, "Aplicando em todas as páginas...");
+                try {
+                    const pdfBytes = await selectedPdfFile.arrayBuffer();
+                    const finalPdfBytes = await applyWatermark(pdfBytes, false);
+                    downloadFile(finalPdfBytes, `marcadagua_${selectedPdfFile.name}`);
+                    showStatus('Download iniciado com sucesso!', false);
+                } catch (error) {
+                     console.error('Error processing files:', error);
+                    showStatus(`Ocorreu um erro: ${error.message}`, true);
+                } finally {
+                    setLoading(false, "Gerar e Baixar PDF");
+                }
+            }
+
+            function downloadFile(bytes, filename) {
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(link.href);
+            }
+
+            function setLoading(isLoading, message = "Gerar e Baixar PDF") {
+                processButton.disabled = isLoading;
+                buttonText.textContent = message;
+                spinner.classList.toggle('hidden', !isLoading);
+            }
+            
+            function showStatus(message, isError = false) {
+                statusMessage.textContent = message;
+                statusMessage.classList.toggle('text-red-600', isError);
+                statusMessage.classList.toggle('text-green-600', !isError);
+                statusMessage.classList.toggle('hidden', !message);
+            }
+
+            function clearSelectedButtonStyle() {
+                 document.querySelectorAll('.action-btn').forEach(btn => btn.classList.remove('selected'));
+            }
+        });
+    </script>
+</body>
+</html>
