@@ -113,23 +113,49 @@ tool_option = st.sidebar.radio("Selecione a ferramenta:", [
 ])
 
 # --- LOGOS EM BASE64 (Blindagem contra erro de rede) ---
-# Substitua estas strings longas pelos códigos Base64 reais dos seus logos PNG
-# Você pode gerar esses códigos em sites como 'base64-image.de'
-LOGO_COMPLETO_B64 = "INSIRA_AQUI_O_CODIGO_BASE64_DO_LOGO_COMPLETO_PNG" 
-LOGO_SIMBOLO_B64 = "INSIRA_AQUI_O_CODIGO_BASE64_DO_SIMBOLO_PNG"
+# Você precisa gerar esses códigos em sites como 'base64-image.de'
+# e colar o texto gerado AQUI, substituindo o texto entre aspas.
+# O texto deve começar com "data:image/png;base64,..." (ou similar)
+LOGO_COMPLETO_B64 = "COLE_AQUI_O_BASE64_DO_LOGO_COMPLETO_PNG" 
+LOGO_SIMBOLO_B64 = "COLE_AQUI_O_BASE64_DO_SIMBOLO_PNG"
+
+# --- FUNÇÃO AUXILIAR PARA CORRIGIR PADDING ---
+def safe_b64decode(b64_string):
+    """
+    Decodifica uma string base64, corrigindo automaticamente o padding incorreto.
+    """
+    if not b64_string or b64_string == "COLE_AQUI_O_BASE64_DO_...":
+        raise ValueError("A string Base64 do logo padrão não foi preenchida ou está vazia.")
+
+    # Remove o prefixo da URL de dados se houver (ex: 'data:image/png;base64,')
+    if "," in b64_string:
+        b64_string = b64_string.split(",")[1]
+
+    # Remove espaços em branco acidentais
+    b64_string = b64_string.strip()
+
+    # Adiciona o padding necessário (= ou ==) para que o comprimento seja múltiplo de 4
+    padding_needed = len(b64_string) % 4
+    if padding_needed:
+        b64_string += "=" * (4 - padding_needed)
+    
+    # Tenta decodificar
+    return base64.b64decode(b64_string)
 
 def get_logo_bytes(choice):
-    if choice == "Logo Completo (com texto)":
-        return base64.b64decode(LOGO_COMPLETO_B64)
-    elif choice == "Apenas Símbolo":
-        return base64.b64decode(LOGO_SIMBOLO_B64)
+    try:
+        if choice == "Logo Completo (com texto)":
+            return safe_b64decode(LOGO_COMPLETO_B64)
+        elif choice == "Apenas Símbolo":
+            return safe_b64decode(LOGO_SIMBOLO_B64)
+    except Exception as e:
+        st.error(f"Erro ao decodificar o logo padrão ({choice}). Verifique o código Base64. Erro: {e}")
     return None
 
 # --- FUNÇÕES CORE ---
 
 def apply_watermark(pdf_stream, image_bytes, opacity_val, overlay_pos):
-    # Correção do erro técnico: bad image data
-    # Garantir que os bytes da imagem sejam válidos
+    # Correção do erro técnico anterior
     if not image_bytes or len(image_bytes) < 10:
         raise ValueError("Dados da imagem inválidos ou vazios.")
 
@@ -157,7 +183,7 @@ def apply_watermark(pdf_stream, image_bytes, opacity_val, overlay_pos):
         
         for y in range(int(-height/2), int(height*1.5), int(y_step)):
             for x in range(int(-width/2), int(width*1.5), int(x_step)):
-                # PyMuPDF fitz suporta opacidade diretamente no insert_image nas versões recentes
+                # PyMuPDF fitz suporta opacidade diretamente nas versões recentes
                 page.insert_image(
                     fitz.Rect(x, y, x + wm_width, y + wm_height),
                     stream=image_bytes,
@@ -201,37 +227,37 @@ if tool_option == "Marca D'água (Overlay)":
             try:
                 with st.spinner("Refinando seu documento..."):
                     
-                    # Obter bytes da imagem de forma SEGURA
                     img_bytes = None
                     
                     if uploaded_logo:
                         img_bytes = uploaded_logo.read()
                     elif logo_choice != "Nenhum":
-                        # Busca o logo em Base64 embutido no código (Sem usar internet)
+                        # Busca o logo em Base64 embutido (Sem usar requests)
                         img_bytes = get_logo_bytes(logo_choice)
                     
                     if not img_bytes:
-                        raise ValueError("Não foi possível carregar a imagem da marca d'água.")
-                    
-                    # Processar com PyMuPDF
-                    output_pdf = apply_watermark(pdf_file.read(), img_bytes, opacity, position)
-                    
-                    # Download
-                    st.download_button(
-                        label="✓ Baixar Documento Protegido (.pdf)",
-                        data=output_pdf,
-                        file_name=f"protegido_{pdf_file.name}",
-                        mime="application/pdf"
-                    )
-                    st.success("Processamento concluído com sucesso.")
+                        # Se img_bytes for None, get_logo_bytes já emitiu um erro técnico detalhado
+                        pass
+                    else:
+                        # Processar com PyMuPDF
+                        output_pdf = apply_watermark(pdf_file.read(), img_bytes, opacity, position)
+                        
+                        # Download
+                        st.download_button(
+                            label="✓ Baixar Documento Protegido (.pdf)",
+                            data=output_pdf,
+                            file_name=f"protegido_{pdf_file.name}",
+                            mime="application/pdf"
+                        )
+                        st.success("Processamento concluído com sucesso.")
             except Exception as e:
-                st.error(f"Ocorreu um erro técnico ao processar a imagem: {e}")
-                st.warning("Dica: Tente usar um logo padrão diferente ou envie uma imagem PNG limpa.")
+                st.error(f"Erro no processamento técnico: {e}")
+                st.warning("Dica: Se estiver usando o logo padrão, verifique o código Base64 no arquivo app.py. Se enviou uma imagem, tente outra imagem PNG limpa.")
         else:
             st.warning("Ação necessária: Por favor, selecione um arquivo PDF e uma marca d'água.")
 
 elif tool_option == "Juntar PDFs (Merge)":
-    # [Código de Merge mantido, ele não usa requests, então está seguro]
+    # [Código de Merge mantido, ele não usa base64, está seguro]
     st.markdown('<h1 class="main-title">Merge PDFs.</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Combine múltiplos arquivos em um único documento.</p>', unsafe_allow_html=True)
     
