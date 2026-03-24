@@ -2,6 +2,7 @@ import streamlit as st
 import fitz  # PyMuPDF
 import io
 import requests
+import base64
 from PIL import Image
 import time
 
@@ -111,51 +112,59 @@ tool_option = st.sidebar.radio("Selecione a ferramenta:", [
     "Proteger com Senha"
 ])
 
-# --- FUNÇÕES CORE (LÓGICA JÁ EXISTENTE E NOVAS) ---
+# --- LOGOS EM BASE64 (Blindagem contra erro de rede) ---
+# Substitua estas strings longas pelos códigos Base64 reais dos seus logos PNG
+# Você pode gerar esses códigos em sites como 'base64-image.de'
+LOGO_COMPLETO_B64 = "INSIRA_AQUI_O_CODIGO_BASE64_DO_LOGO_COMPLETO_PNG" 
+LOGO_SIMBOLO_B64 = "INSIRA_AQUI_O_CODIGO_BASE64_DO_SIMBOLO_PNG"
 
-# 1. Função de Marca D'água (RECUPERADA E INTEGRADA)
+def get_logo_bytes(choice):
+    if choice == "Logo Completo (com texto)":
+        return base64.b64decode(LOGO_COMPLETO_B64)
+    elif choice == "Apenas Símbolo":
+        return base64.b64decode(LOGO_SIMBOLO_B64)
+    return None
+
+# --- FUNÇÕES CORE ---
+
 def apply_watermark(pdf_stream, image_bytes, opacity_val, overlay_pos):
+    # Correção do erro técnico: bad image data
+    # Garantir que os bytes da imagem sejam válidos
+    if not image_bytes or len(image_bytes) < 10:
+        raise ValueError("Dados da imagem inválidos ou vazios.")
+
     doc = fitz.open(stream=pdf_stream, filetype="pdf")
-    img_stream = io.BytesIO(image_bytes)
     
-    # Criar Pixmap para aplicar opacidade na imagem (PyMuPDF lida melhor assim)
-    pix = fitz.Pixmap(img_stream)
-    if pix.alpha: # Se já tem alfa, preserva
-        pix_alpha = fitz.Pixmap(pix)
-    else: # Se não, cria canal alfa
-        pix_alpha = fitz.Pixmap(fitz.csRGB, pix)
-    
-    # Gerar imagem temporária com opacidade
-    # Nota: No PyMuPDF fitz, insert_image overlay=True/False controla frente/trás, 
-    # mas a opacidade da imagem em si é mais complexa. Uma forma comum é usar
-    # draw_rect com blendmode, mas para manter a lógica original de insert_image,
-    # vamos usar o parâmetro overlay e a imagem original.
-    
+    # Obter proporção da imagem de forma segura
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as img:
+            ratio = img.height / img.width
+    except Exception:
+        # Se falhar ao ler a imagem, assume proporção quadrada (segurança)
+        ratio = 1.0
+
     for page in doc:
         rect = page.rect
         width, height = rect.width, rect.height
         
-        # Proporção da imagem (Pillow para ler metadados)
-        with Image.open(io.BytesIO(image_bytes)) as img:
-            ratio = img.height / img.width
-            wm_width = width / 4.5
-            wm_height = wm_width * ratio
+        # Tamanho da marca d'água (baseado na largura da página)
+        wm_width = width / 4.5
+        wm_height = wm_width * ratio
 
-        # Grid de proteção (Igual ao JS/código anterior)
+        # Grid de proteção
         x_step = wm_width * 1.4
         y_step = wm_height * 1.8
         
         for y in range(int(-height/2), int(height*1.5), int(y_step)):
             for x in range(int(-width/2), int(width*1.5), int(x_step)):
+                # PyMuPDF fitz suporta opacidade diretamente no insert_image nas versões recentes
                 page.insert_image(
                     fitz.Rect(x, y, x + wm_width, y + wm_height),
                     stream=image_bytes,
                     overlay=(overlay_pos == "Frente"),
                     rotate=30,
-                    keep_proportion=True
-                    # Opacidade via insert_image no PyMuPDF é complexa. 
-                    # Uma alternativa é draw_image com BlendMode, mas requer Pixmap.
-                    # Para simplificar e manter a lógica estável:
+                    keep_proportion=True,
+                    opacity=opacity_val # Aplicando a opacidade do slider
                 )
     return doc.write()
 
@@ -165,12 +174,6 @@ if tool_option == "Marca D'água (Overlay)":
     # --- HEADER PRINCIPAL ---
     st.markdown('<h1 class="main-title">Overlay Tool.</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Documentos protegidos com a identidade da Neuro.</p>', unsafe_allow_html=True)
-
-    # --- LOGOS PADRÃO ---
-    default_logos = {
-        "Logo Completo (com texto)": "https://i.imgur.com/AsDlS5n.png",
-        "Apenas Símbolo": "https://i.imgur.com/9csjpBQ.png"
-    }
 
     # --- ETAPA 1: PDF ---
     st.markdown("### 1. Selecione o PDF")
@@ -182,7 +185,8 @@ if tool_option == "Marca D'água (Overlay)":
 
     with col1:
         st.write("**Identidade Visual**")
-        logo_choice = st.selectbox("Escolha o logo padrão:", ["Nenhum"] + list(default_logos.keys()))
+        logo_options = ["Nenhum", "Logo Completo (com texto)", "Apenas Símbolo"]
+        logo_choice = st.selectbox("Escolha o logo padrão:", logo_options)
         st.write("---")
         uploaded_logo = st.file_uploader("Ou envie um arquivo personalizado:", type=["png", "jpg", "jpeg"])
 
@@ -191,17 +195,23 @@ if tool_option == "Marca D'água (Overlay)":
         opacity = st.slider("Opacidade (Transparência)", 0.05, 1.0, 0.25, 0.05)
         position = st.radio("Sobreposição", ["Frente", "Atrás"], horizontal=True)
 
-    # --- BOTÃO DE AÇÃO (LÓGICA RECUPERADA) ---
+    # --- BOTÃO DE AÇÃO ---
     if st.button("Gerar e Baixar PDF Protegido"):
         if pdf_file and (logo_choice != "Nenhum" or uploaded_logo):
             try:
                 with st.spinner("Refinando seu documento..."):
-                    # Obter bytes da imagem (Local ou URL)
+                    
+                    # Obter bytes da imagem de forma SEGURA
+                    img_bytes = None
+                    
                     if uploaded_logo:
                         img_bytes = uploaded_logo.read()
-                    else:
-                        response = requests.get(default_logos[logo_choice])
-                        img_bytes = response.content
+                    elif logo_choice != "Nenhum":
+                        # Busca o logo em Base64 embutido no código (Sem usar internet)
+                        img_bytes = get_logo_bytes(logo_choice)
+                    
+                    if not img_bytes:
+                        raise ValueError("Não foi possível carregar a imagem da marca d'água.")
                     
                     # Processar com PyMuPDF
                     output_pdf = apply_watermark(pdf_file.read(), img_bytes, opacity, position)
@@ -215,11 +225,13 @@ if tool_option == "Marca D'água (Overlay)":
                     )
                     st.success("Processamento concluído com sucesso.")
             except Exception as e:
-                st.error(f"Ocorreu um erro técnico: {e}")
+                st.error(f"Ocorreu um erro técnico ao processar a imagem: {e}")
+                st.warning("Dica: Tente usar um logo padrão diferente ou envie uma imagem PNG limpa.")
         else:
             st.warning("Ação necessária: Por favor, selecione um arquivo PDF e uma marca d'água.")
 
 elif tool_option == "Juntar PDFs (Merge)":
+    # [Código de Merge mantido, ele não usa requests, então está seguro]
     st.markdown('<h1 class="main-title">Merge PDFs.</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Combine múltiplos arquivos em um único documento.</p>', unsafe_allow_html=True)
     
@@ -241,6 +253,7 @@ elif tool_option == "Juntar PDFs (Merge)":
             st.error(f"Erro: {e}")
 
 elif tool_option == "Remover/Reorganizar Páginas":
+    # [Código de Organize mantido, seguro]
     st.markdown('<h1 class="main-title">Organize Pages.</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Selecione e ordene as páginas que deseja manter.</p>', unsafe_allow_html=True)
     
@@ -252,16 +265,23 @@ elif tool_option == "Remover/Reorganizar Páginas":
             with st.spinner("Editando páginas..."):
                 doc = fitz.open(stream=f.read(), filetype="pdf")
                 
-                # Lógica para converter string (1, 3, 5-10) em lista de índices (0, 2, 4, 5...)
                 page_indices = []
                 for part in pages_to_keep.split(','):
+                    part = part.strip()
+                    if not part: continue
                     if '-' in part:
-                        start, end = map(int, part.split('-'))
-                        page_indices.extend(range(start - 1, end))
+                        try:
+                            start, end = map(int, part.split('-'))
+                            page_indices.extend(range(start - 1, end))
+                        except: continue
                     else:
-                        page_indices.append(int(part.strip()) - 1)
+                        try: page_indices.append(int(part) - 1)
+                        except: continue
                 
-                doc.select(page_indices) # Mantém apenas os índices selecionados
+                if not page_indices:
+                    raise ValueError("Nenhuma página válida selecionada.")
+                    
+                doc.select(page_indices)
                 output = io.BytesIO()
                 doc.save(output)
                 st.download_button("✓ Baixar PDF Editado", data=output.getvalue(), file_name="editado_neuro.pdf", mime="application/pdf")
@@ -270,6 +290,7 @@ elif tool_option == "Remover/Reorganizar Páginas":
             st.error(f"Erro: Verifique se os números das páginas estão corretos. {e}")
 
 elif tool_option == "Proteger com Senha":
+    # [Código de Protect mantido, seguro]
     st.markdown('<h1 class="main-title">Protect PDF.</h1>', unsafe_allow_html=True)
     st.markdown('<p class="sub-title">Criptografia AES-256 para documentos sensíveis (LGPD).</p>', unsafe_allow_html=True)
     
@@ -281,7 +302,6 @@ elif tool_option == "Proteger com Senha":
             with st.spinner("Aplicando criptografia..."):
                 doc = fitz.open(stream=f.read(), filetype="pdf")
                 output = io.BytesIO()
-                # Salva com criptografia AES-256 e permissões padrão (impressão/cópia permitidas)
                 doc.save(output, encryption=fitz.PDF_ENCRYPT_AES_256, user_pw=password)
                 st.download_button("✓ Baixar PDF Protegido", data=output.getvalue(), file_name="protegido_neuro.pdf", mime="application/pdf")
                 st.success("Arquivo protegido com senha!")
